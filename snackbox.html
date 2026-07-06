@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SnackFit — 예산만 정하면, 스낵박스 완성</title>
+<script>
+/* 접근 가드: 로그인하지 않으면 로그인 페이지로 (화면 뜨기 전에 실행) */
+(function () {
+  var s = null;
+  try { s = JSON.parse(localStorage.getItem("snackfit_session_v1")); } catch (e) {}
+  if (!s || !s.id) location.replace("login.html");
+})();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@latest/dist/web/static/pretendard.min.css" />
+<style>
+  :root {
+    --bg: #f7f7fb;
+    --surface: #ffffff;
+    --ink: #17181d;
+    --ink-2: #5b5f6b;
+    --ink-3: #9a9eab;
+    --line: #ececf2;
+    --brand: #6c5ce7;
+    --brand-2: #a29bfe;
+    --accent: #ff7043;
+    --green: #00b894;
+    --red: #e74c3c;
+    --radius: 18px;
+    --shadow: 0 10px 30px rgba(23, 24, 29, 0.07);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: Pretendard, -apple-system, "Malgun Gothic", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input { font-family: inherit; }
+
+  /* ---------- header ---------- */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(14px);
+    background: rgba(247, 247, 251, 0.82);
+    border-bottom: 1px solid var(--line);
+  }
+  .header-inner {
+    max-width: 1200px; margin: 0 auto; padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 21px; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
+  .logo .dot { color: var(--brand); }
+  .header-badge {
+    font-size: 13px; font-weight: 600; color: var(--brand);
+    background: rgba(108, 92, 231, 0.1); padding: 7px 14px; border-radius: 99px;
+  }
+  .admin-link {
+    text-decoration: none; color: var(--ink-2);
+    background: var(--bg); border: 1px solid var(--line);
+    transition: all 0.15s;
+  }
+  .admin-link:hover { color: var(--brand); border-color: var(--brand); }
+
+  /* ---------- hero ---------- */
+  .hero { max-width: 1200px; margin: 0 auto; padding: 72px 24px 40px; text-align: center; }
+  .hero .eyebrow {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 14px; font-weight: 700; color: var(--accent);
+    background: rgba(255, 112, 67, 0.1); padding: 8px 16px; border-radius: 99px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5vw, 52px); font-weight: 800; letter-spacing: -1.5px; line-height: 1.25;
+  }
+  .hero h1 .grad {
+    background: linear-gradient(120deg, var(--brand), var(--accent));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { margin-top: 18px; font-size: 17px; color: var(--ink-2); line-height: 1.7; }
+
+  /* ---------- budget panel ---------- */
+  .budget-panel {
+    max-width: 680px; margin: 36px auto 0;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 24px; box-shadow: var(--shadow); padding: 32px;
+  }
+  .budget-label { font-size: 14px; font-weight: 700; color: var(--ink-2); margin-bottom: 12px; text-align: left; }
+  .budget-input-row { display: flex; gap: 12px; }
+  .budget-input-wrap {
+    flex: 1; display: flex; align-items: center;
+    background: var(--bg); border: 2px solid transparent; border-radius: 14px; padding: 0 18px;
+    transition: border-color 0.2s;
+  }
+  .budget-input-wrap:focus-within { border-color: var(--brand); background: #fff; }
+  .budget-input-wrap input {
+    flex: 1; border: none; outline: none; background: transparent;
+    font-size: 24px; font-weight: 800; padding: 16px 0; min-width: 0;
+    letter-spacing: -0.5px;
+  }
+  .budget-input-wrap .won { font-size: 20px; font-weight: 700; color: var(--ink-3); }
+  .btn-primary {
+    background: linear-gradient(120deg, var(--brand), #8e7cf3);
+    color: #fff; font-size: 16px; font-weight: 700;
+    padding: 0 28px; border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(108, 92, 231, 0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+    white-space: nowrap;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(108, 92, 231, 0.45); }
+  .btn-primary:active { transform: translateY(0); }
+  .presets { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .preset-chip {
+    font-size: 14px; font-weight: 600; color: var(--ink-2);
+    background: var(--bg); border: 1px solid var(--line);
+    padding: 9px 16px; border-radius: 99px; transition: all 0.15s;
+  }
+  .preset-chip:hover, .preset-chip.active {
+    color: var(--brand); border-color: var(--brand); background: rgba(108, 92, 231, 0.08);
+  }
+  .budget-hint { margin-top: 14px; font-size: 13px; color: var(--ink-3); text-align: left; }
+
+  /* ---------- features strip ---------- */
+  .features {
+    max-width: 900px; margin: 48px auto 0; padding: 0 24px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  }
+  .feature {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 22px; text-align: left;
+  }
+  .feature .fi { font-size: 26px; }
+  .feature h3 { font-size: 15px; font-weight: 700; margin-top: 10px; }
+  .feature p { font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.6; }
+
+  /* ---------- result section ---------- */
+  #result-section { max-width: 1200px; margin: 64px auto 120px; padding: 0 24px; display: none; }
+  #result-section.show { display: block; animation: fadeUp 0.5s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+  .result-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .result-head h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.8px; }
+  .result-head .sub { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+  .btn-shuffle {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 700; color: var(--brand);
+    background: rgba(108, 92, 231, 0.1); padding: 12px 20px; border-radius: 12px;
+    transition: background 0.15s;
+  }
+  .btn-shuffle:hover { background: rgba(108, 92, 231, 0.18); }
+
+  .result-grid { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; }
+
+  /* ---------- item cards ---------- */
+  .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .item-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; position: relative;
+    animation: cardIn 0.4s ease both;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .item-card:hover { box-shadow: var(--shadow); }
+  .item-card.locked { border-color: var(--brand); background: linear-gradient(180deg, rgba(108,92,231,0.04), var(--surface)); }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+  .item-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .item-photo {
+    height: 130px; border-radius: 13px; overflow: hidden; position: relative;
+    background: var(--bg); display: flex; align-items: center; justify-content: center;
+    font-size: 48px;
+  }
+  .item-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .item-photo .item-actions { position: absolute; top: 8px; right: 8px; }
+  .item-photo .icon-btn { background: rgba(255, 255, 255, 0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); color: var(--ink-2); }
+  .item-photo .icon-btn:hover { background: #fff; color: var(--ink); }
+  .item-photo .icon-btn.lock-on { background: var(--brand); color: #fff; }
+  .lock-tag { z-index: 2; }
+  .excluded-chip img { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; }
+  .item-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 9px; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--ink-3); transition: all 0.15s;
+  }
+  .icon-btn:hover { background: var(--line); color: var(--ink); }
+  .icon-btn.lock-on { background: var(--brand); color: #fff; }
+  .icon-btn.remove:hover { background: rgba(231, 76, 60, 0.12); color: var(--red); }
+
+  .item-name { font-size: 15px; font-weight: 700; margin-top: 14px; letter-spacing: -0.3px; }
+  .item-cat { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+  .item-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+  .item-price { font-size: 15px; font-weight: 800; }
+  .qty-stepper {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--bg); border-radius: 10px; padding: 3px;
+  }
+  .qty-stepper button {
+    width: 26px; height: 26px; border-radius: 8px; font-size: 15px; font-weight: 700;
+    color: var(--ink-2); display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .qty-stepper button:hover { background: #fff; }
+  .qty-stepper .qty { min-width: 26px; text-align: center; font-size: 14px; font-weight: 700; }
+  .lock-tag {
+    position: absolute; top: -9px; left: 14px;
+    font-size: 11px; font-weight: 700; color: #fff;
+    background: var(--brand); padding: 3px 10px; border-radius: 99px;
+  }
+
+  /* ---------- excluded ---------- */
+  .excluded-box { margin-top: 24px; }
+  .excluded-box h4 { font-size: 13px; font-weight: 700; color: var(--ink-3); margin-bottom: 10px; }
+  .excluded-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .excluded-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    background: var(--surface); border: 1px dashed var(--line);
+    padding: 8px 14px; border-radius: 99px; transition: all 0.15s;
+  }
+  .excluded-chip:hover { border-color: var(--green); color: var(--green); }
+  .excluded-chip .plus { font-weight: 800; }
+
+  /* ---------- summary ---------- */
+  .summary {
+    position: sticky; top: 88px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 22px; box-shadow: var(--shadow); padding: 26px; overflow: hidden;
+  }
+  .summary h3 { font-size: 17px; font-weight: 800; letter-spacing: -0.4px; }
+  .summary .box-meta { font-size: 13px; color: var(--ink-2); margin-top: 5px; }
+
+  .gauge { margin-top: 18px; }
+  .gauge-track { height: 10px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+  .gauge-fill {
+    height: 100%; border-radius: 99px; width: 0%;
+    background: linear-gradient(90deg, var(--brand-2), var(--brand));
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background 0.3s;
+  }
+  .gauge-fill.over { background: linear-gradient(90deg, #ffb199, var(--red)); }
+  .gauge-fill.perfect { background: linear-gradient(90deg, #55efc4, var(--green)); }
+  .gauge-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); margin-top: 7px; }
+
+  .summary-rows { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .srow { display: flex; justify-content: space-between; font-size: 14px; }
+  .srow .k { color: var(--ink-2); }
+  .srow .v { font-weight: 700; }
+  .srow.discount .v { color: var(--green); }
+  .srow.discount .badge {
+    font-size: 11px; font-weight: 700; color: var(--green);
+    background: rgba(0, 184, 148, 0.1); border-radius: 6px; padding: 2px 7px; margin-left: 6px;
+  }
+  .srow.total { border-top: 1px dashed var(--line); padding-top: 14px; margin-top: 4px; align-items: center; }
+  .srow.total .k { font-weight: 700; color: var(--ink); }
+  .srow.total .v { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+
+  .status-msg {
+    margin-top: 16px; font-size: 13px; font-weight: 600; line-height: 1.6;
+    padding: 12px 14px; border-radius: 12px;
+  }
+  .status-msg.ok { color: var(--green); background: rgba(0, 184, 148, 0.08); }
+  .status-msg.warn { color: #d68910; background: rgba(243, 156, 18, 0.1); }
+  .status-msg.over { color: var(--red); background: rgba(231, 76, 60, 0.08); }
+
+  .btn-order {
+    width: 100%; margin-top: 18px; padding: 16px;
+    font-size: 16px; font-weight: 800; color: #fff;
+    background: var(--ink); border-radius: 14px;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .btn-order:hover { transform: translateY(-2px); background: #000; }
+  .btn-order:disabled { background: var(--ink-3); cursor: not-allowed; transform: none; }
+
+  /* ---------- order modal ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(23, 24, 29, 0.5); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; z-index: 80; padding: 20px;
+  }
+  .overlay.show { display: flex; animation: fade 0.2s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: #fff; border-radius: 22px; width: 460px; max-width: 100%;
+    max-height: 92vh; overflow: auto; padding: 28px;
+    animation: pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes pop { from { transform: translateY(14px) scale(0.98); opacity: 0.5; } to { transform: none; opacity: 1; } }
+  .modal h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  .modal .order-note {
+    font-size: 13px; color: var(--ink-2); margin-top: 10px; line-height: 1.6;
+    background: rgba(108, 92, 231, 0.07); padding: 11px 14px; border-radius: 12px;
+  }
+  .field { margin-top: 14px; }
+  .field label { display: block; font-size: 13px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
+  .field input, .field textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    font-size: 14px; background: var(--bg); outline: none; transition: border-color 0.15s;
+    font-family: inherit;
+  }
+  .field input:focus, .field textarea:focus { border-color: var(--brand); background: #fff; }
+  .field textarea { resize: vertical; min-height: 68px; }
+  .order-total-line {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line);
+    font-size: 14px; font-weight: 700;
+  }
+  .order-total-line .amt { font-size: 21px; font-weight: 800; color: var(--brand); }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-ghost {
+    flex: 1; padding: 14px; border-radius: 12px; background: var(--bg);
+    font-size: 15px; font-weight: 700; color: var(--ink-2); transition: background 0.15s;
+  }
+  .btn-ghost:hover { background: var(--line); }
+  .btn-send {
+    flex: 2; padding: 14px; border-radius: 12px;
+    background: linear-gradient(120deg, var(--brand), #8e7cf3); color: #fff;
+    font-size: 15px; font-weight: 800;
+    box-shadow: 0 8px 20px rgba(108, 92, 231, 0.3); transition: filter 0.15s;
+  }
+  .btn-send:hover { filter: brightness(1.05); }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;
+    padding: 14px 24px; border-radius: 99px; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s; z-index: 100;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    max-width: 90vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- confetti ---------- */
+  .confetti {
+    position: fixed; top: -12px; font-size: 22px; z-index: 90; pointer-events: none;
+    animation: fall linear forwards;
+  }
+  @keyframes fall {
+    to { transform: translateY(110vh) rotate(540deg); opacity: 0.4; }
+  }
+
+  footer { text-align: center; padding: 40px 24px 60px; font-size: 13px; color: var(--ink-3); }
+
+  @media (max-width: 900px) {
+    .result-grid { grid-template-columns: 1fr; }
+    .summary { position: static; }
+    .features { grid-template-columns: 1fr; }
+    .budget-input-row { flex-direction: column; }
+    .btn-primary { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">🍿 Snack<span class="dot">Fit</span></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="header-badge user-chip" id="user-chip"></span>
+      <a class="header-badge admin-link" href="admin.html" id="admin-link">⚙️ 관리자</a>
+      <button class="header-badge admin-link" id="btn-logout" style="cursor:pointer">로그아웃</button>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">✨ 고민은 저희가, 과자는 당신이</div>
+  <h1>예산만 정하세요,<br /><span class="grad">스낵박스</span>는 자동으로 완성돼요</h1>
+  <p>수십 가지 과자를 하나하나 고를 필요 없어요.<br />금액을 입력하면 알아서 조합하고, 초과분은 <b>최대 5% 자동 할인</b>으로 예산에 딱 맞춰드려요.</p>
+
+  <div class="budget-panel">
+    <div class="budget-label">스낵박스 예산</div>
+    <div class="budget-input-row">
+      <div class="budget-input-wrap">
+        <input id="budget-input" type="text" inputmode="numeric" placeholder="예: 50,000" autocomplete="off" />
+        <span class="won">원</span>
+      </div>
+      <button class="btn-primary" id="btn-build">박스 만들기 🎁</button>
+    </div>
+    <div class="presets" id="presets">
+      <button class="preset-chip" data-v="10000">1만원</button>
+      <button class="preset-chip" data-v="30000">3만원</button>
+      <button class="preset-chip" data-v="50000">5만원</button>
+      <button class="preset-chip" data-v="100000">10만원</button>
+    </div>
+    <div class="budget-hint">💡 최소 3,000원부터 구성할 수 있어요</div>
+  </div>
+
+  <div class="features">
+    <div class="feature">
+      <div class="fi">🎯</div>
+      <h3>예산 맞춤 자동 조합</h3>
+      <p>입력한 금액에 맞춰 다양한 과자를 알아서 골라 담아요.</p>
+    </div>
+    <div class="feature">
+      <div class="fi">🔧</div>
+      <h3>내 마음대로 커스텀</h3>
+      <p>싫은 과자는 제외, 꼭 넣을 과자는 고정, 수량도 자유롭게.</p>
+    </div>
+    <div class="feature">
+      <div class="fi">💸</div>
+      <h3>초과분 자동 할인</h3>
+      <p>합계가 예산을 넘으면 최대 5%까지 할인해서 딱 맞춰드려요.</p>
+    </div>
+  </div>
+</section>
+
+<section id="result-section">
+  <div class="result-head">
+    <div>
+      <h2>🎁 나만의 스낵박스</h2>
+      <div class="sub" id="result-sub"></div>
+    </div>
+    <button class="btn-shuffle" id="btn-shuffle">🔄 다른 조합 보기</button>
+  </div>
+
+  <div class="result-grid">
+    <div>
+      <div class="items-grid" id="items-grid"></div>
+      <div class="excluded-box" id="excluded-box" style="display:none">
+        <h4>🚫 제외한 상품 — 눌러서 다시 후보에 넣을 수 있어요</h4>
+        <div class="excluded-chips" id="excluded-chips"></div>
+      </div>
+    </div>
+
+    <aside class="summary">
+      <h3>주문 요약</h3>
+      <div class="box-meta" id="box-meta"></div>
+      <div class="gauge">
+        <div class="gauge-track"><div class="gauge-fill" id="gauge-fill"></div></div>
+        <div class="gauge-labels"><span>0원</span><span id="gauge-budget"></span></div>
+      </div>
+      <div class="summary-rows">
+        <div class="srow"><span class="k">상품 합계</span><span class="v" id="sum-subtotal">0원</span></div>
+        <div class="srow discount" id="row-discount" style="display:none">
+          <span class="k">예산 맞춤 할인<span class="badge" id="discount-rate"></span></span>
+          <span class="v" id="sum-discount">-0원</span>
+        </div>
+        <div class="srow total"><span class="k">최종 결제 금액</span><span class="v" id="sum-total">0원</span></div>
+      </div>
+      <div class="status-msg" id="status-msg"></div>
+      <button class="btn-order" id="btn-order">이 구성으로 주문하기</button>
+    </aside>
+  </div>
+</section>
+
+<footer>SnackFit — 예산 맞춤 스낵박스<span id="footer-admin"> · <a href="admin.html" style="color:var(--ink-3)">관리자 페이지</a></span></footer>
+
+<!-- 주문서 모달 -->
+<div class="overlay" id="order-overlay">
+  <div class="modal">
+    <h2>📧 주문서 보내기</h2>
+    <p class="order-note" id="order-note">결제 대신 작성하신 <b>주문서가 이메일로 발송</b>돼요.</p>
+    <div class="field"><label>주문자 이름 *</label><input id="order-name" placeholder="홍길동" autocomplete="name" /></div>
+    <div class="field"><label>연락처</label><input id="order-phone" placeholder="010-0000-0000" autocomplete="tel" /></div>
+    <div class="field"><label>배송 주소</label><input id="order-addr" placeholder="서울시 ○○구 ○○로 123" autocomplete="street-address" /></div>
+    <div class="field"><label>요청사항</label><textarea id="order-memo" placeholder="예) 사무실 간식용이에요. 문 앞에 놓아주세요."></textarea></div>
+    <div class="order-total-line"><span>최종 결제 금액</span><span class="amt" id="order-total-amt"></span></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="order-cancel">취소</button>
+      <button class="btn-send" id="order-send">이메일로 주문서 보내기</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 상품 데이터 ================= */
+const KEY_PRODUCTS = "snackfit_products_v1";
+const KEY_SETTINGS = "snackfit_settings_v1";
+
+const DEFAULT_PRODUCTS = [
+  { id: "saewookkang", name: "새우깡", price: 1500, emoji: "🍤", cat: "스낵" },
+  { id: "pocachip", name: "포카칩 오리지널", price: 1700, emoji: "🥔", cat: "스낵" },
+  { id: "honeybutter", name: "허니버터칩", price: 1800, emoji: "🍯", cat: "스낵" },
+  { id: "kkobukchip", name: "꼬북칩 초코츄러스", price: 1700, emoji: "🐢", cat: "스낵" },
+  { id: "ojing", name: "오징어땅콩", price: 1600, emoji: "🦑", cat: "스낵" },
+  { id: "kkul", name: "꿀꽈배기", price: 1500, emoji: "🥨", cat: "스낵" },
+  { id: "banana", name: "바나나킥", price: 1400, emoji: "🍌", cat: "스낵" },
+  { id: "cornchip", name: "콘칩", price: 1500, emoji: "🌽", cat: "스낵" },
+  { id: "pringles", name: "프링글스 어니언", price: 2500, emoji: "🥫", cat: "스낵" },
+  { id: "cheetos", name: "치토스", price: 1300, emoji: "🧀", cat: "스낵" },
+  { id: "ghana", name: "가나 초콜릿", price: 1200, emoji: "🍫", cat: "초콜릿" },
+  { id: "kitkat", name: "킷캣", price: 1500, emoji: "🍫", cat: "초콜릿" },
+  { id: "ferrero", name: "페레로로쉐 3구", price: 3000, emoji: "✨", cat: "초콜릿" },
+  { id: "chocosongi", name: "초코송이", price: 1000, emoji: "🍄", cat: "초콜릿" },
+  { id: "pepero", name: "빼빼로 초코", price: 1500, emoji: "🥖", cat: "초콜릿" },
+  { id: "abc", name: "ABC 초콜릿", price: 2800, emoji: "🍬", cat: "초콜릿" },
+  { id: "haribo", name: "하리보 골드베렌", price: 2000, emoji: "🐻", cat: "젤리·캔디" },
+  { id: "mygummy", name: "마이구미 포도", price: 1200, emoji: "🍇", cat: "젤리·캔디" },
+  { id: "kkumteul", name: "왕꿈틀이", price: 1000, emoji: "🐛", cat: "젤리·캔디" },
+  { id: "chupa", name: "츄파춥스", price: 500, emoji: "🍭", cat: "젤리·캔디" },
+  { id: "mentos", name: "멘토스 후르츠", price: 1200, emoji: "🌀", cat: "젤리·캔디" },
+  { id: "aisher", name: "아이셔", price: 800, emoji: "😝", cat: "젤리·캔디" },
+  { id: "chocochip", name: "초코칩 쿠키", price: 1800, emoji: "🍪", cat: "쿠키·비스킷" },
+  { id: "ace", name: "에이스", price: 1500, emoji: "🥠", cat: "쿠키·비스킷" },
+  { id: "oreo", name: "오레오", price: 1700, emoji: "🖤", cat: "쿠키·비스킷" },
+  { id: "butterwaffle", name: "버터와플", price: 2300, emoji: "🧇", cat: "쿠키·비스킷" },
+  { id: "margaret", name: "마가렛트", price: 3000, emoji: "🍪", cat: "쿠키·비스킷" },
+  { id: "digest", name: "다이제 초코", price: 2200, emoji: "🟤", cat: "쿠키·비스킷" },
+  { id: "chocopie", name: "초코파이 2입", price: 1000, emoji: "🥧", cat: "파이" },
+  { id: "mongshell", name: "몽쉘 2입", price: 1200, emoji: "🍰", cat: "파이" },
+  { id: "custard", name: "카스타드 2입", price: 1000, emoji: "🍮", cat: "파이" },
+  { id: "ohyes", name: "오예스 2입", price: 1300, emoji: "🎂", cat: "파이" },
+];
+
+/* 관리자 페이지에서 저장한 상품·설정 불러오기 (없으면 기본 상품 사용) */
+function loadProducts() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY_PRODUCTS));
+    if (Array.isArray(d) && d.length) return d.filter(p => p && p.id && p.name && p.price > 0);
+  } catch (e) {}
+  return DEFAULT_PRODUCTS;
+}
+/* 기본 주문 수신 이메일: 방문자 브라우저에 관리자 설정이 없어도 주문서가 갈 곳 */
+const DEFAULT_SETTINGS = { orderEmail: "mkrr87@gmail.com" };
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY_SETTINGS));
+    return Object.assign({}, DEFAULT_SETTINGS, s || {});
+  } catch (e) { return { ...DEFAULT_SETTINGS }; }
+}
+const PRODUCTS = loadProducts();
+const SETTINGS = loadSettings();
+const byId = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+
+/* ================= 로그인 세션 ================= */
+const SESSION = (() => {
+  try { return JSON.parse(localStorage.getItem("snackfit_session_v1")); } catch (e) { return null; }
+})();
+document.querySelector("#user-chip").textContent = `🙂 ${SESSION && SESSION.name ? SESSION.name : "손님"}님`;
+if (!SESSION || SESSION.role !== "admin") {
+  document.querySelector("#admin-link").style.display = "none"; // 관리자 전용
+  document.querySelector("#footer-admin").style.display = "none";
+}
+document.querySelector("#btn-logout").addEventListener("click", () => {
+  localStorage.removeItem("snackfit_session_v1");
+  location.href = "login.html";
+});
+
+const MIN_BUDGET = 3000;
+const MAX_DISCOUNT_RATE = 0.05;   // 최대 5% 할인
+const MAX_QTY_PER_ITEM = 3;       // 자동 구성 시 품목당 최대 수량
+
+/* ================= 상태 ================= */
+const state = {
+  budget: 0,
+  box: new Map(),        // id -> { qty, locked }
+  excluded: new Set(),   // id
+};
+
+/* ================= 유틸 ================= */
+const fmt = n => n.toLocaleString("ko-KR") + "원";
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* 상품 이미지: 등록된 이미지가 없으면 카테고리 색상 + 이모지로 자동 생성 */
+function hueFor(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return Math.abs(h) % 360;
+}
+function productImage(p) {
+  if (p.img) return p.img;
+  const hue = hueFor(p.cat || p.name || "snack");
+  const hue2 = (hue + 45) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="hsl(${hue},85%,93%)"/>
+      <stop offset="1" stop-color="hsl(${hue2},80%,85%)"/>
+    </linearGradient></defs>
+    <rect width="400" height="400" fill="url(#g)"/>
+    <circle cx="330" cy="70" r="95" fill="hsl(${hue},75%,88%)" opacity="0.7"/>
+    <circle cx="55" cy="345" r="75" fill="hsl(${hue2},75%,88%)" opacity="0.6"/>
+    <text x="200" y="248" font-size="150" text-anchor="middle">${p.emoji || "🍬"}</text>
+  </svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function subtotal() {
+  let t = 0;
+  for (const [id, e] of state.box) t += byId[id].price * e.qty;
+  return t;
+}
+
+/* 할인 계산: 예산 초과분이 합계의 5% 이내면 예산에 딱 맞게 할인 */
+function pricing() {
+  const sub = subtotal();
+  const b = state.budget;
+  if (sub <= b) return { sub, discount: 0, total: sub, over: false };
+  const maxDiscount = Math.floor(sub * MAX_DISCOUNT_RATE);
+  const need = sub - b;
+  if (need <= maxDiscount) return { sub, discount: need, total: b, over: false };
+  return { sub, discount: 0, total: sub, over: true };
+}
+
+/* ================= 자동 구성 알고리즘 =================
+   목표: 합계가 [예산, 예산/0.95] 구간에 들어가도록 담아서
+   할인으로 정확히 예산에 맞추기. 불가능하면 예산 이하로 최대한 근접. */
+function composeBox() {
+  const b = state.budget;
+  const ceiling = Math.floor(b / (1 - MAX_DISCOUNT_RATE)); // 할인으로 커버 가능한 합계 상한
+
+  // 고정 상품은 유지, 나머지는 비움
+  const next = new Map();
+  let total = 0;
+  for (const [id, e] of state.box) {
+    if (e.locked) { next.set(id, { ...e }); total += byId[id].price * e.qty; }
+  }
+
+  const pool = PRODUCTS.filter(p => !state.excluded.has(p.id));
+  if (!pool.length) { state.box = next; return; }
+
+  // 1단계: 예산에 도달할 때까지 무작위로 다양하게 담기
+  let guard = 1000;
+  while (total < b && guard-- > 0) {
+    const affordable = pool.filter(p => {
+      const cur = next.get(p.id) ? next.get(p.id).qty : 0;
+      return cur < MAX_QTY_PER_ITEM && total + p.price <= ceiling;
+    });
+    if (!affordable.length) break;
+
+    // 담았을 때 [예산, 상한]에 안착하는 상품이 있으면 초과분이 가장 작은 것 우선
+    const landing = affordable.filter(p => total + p.price >= b);
+    let pick;
+    if (landing.length) {
+      landing.sort((x, y) => x.price - y.price);
+      pick = landing[0];
+    } else {
+      pick = shuffle(affordable)[0];
+    }
+    const e = next.get(pick.id) || { qty: 0, locked: false };
+    e.qty += 1;
+    next.set(pick.id, e);
+    total += pick.price;
+  }
+
+  // 2단계: 예산 미달이면 저렴한 상품으로 예산 이하까지 최대한 채우기
+  if (total < b) {
+    const cheap = [...pool].sort((x, y) => x.price - y.price);
+    guard = 500;
+    while (guard-- > 0) {
+      const fit = cheap.find(p => total + p.price <= b);
+      if (!fit) break;
+      const e = next.get(fit.id) || { qty: 0, locked: false };
+      e.qty += 1;
+      next.set(fit.id, e);
+      total += fit.price;
+    }
+  }
+
+  state.box = next;
+}
+
+/* ================= 렌더링 ================= */
+function render() {
+  renderItems();
+  renderExcluded();
+  renderSummary();
+}
+
+function renderItems() {
+  const grid = $("#items-grid");
+  grid.innerHTML = "";
+  const entries = [...state.box.entries()].filter(([, e]) => e.qty > 0);
+
+  entries.forEach(([id, e], i) => {
+    const p = byId[id];
+    const card = document.createElement("div");
+    card.className = "item-card" + (e.locked ? " locked" : "");
+    card.style.animationDelay = (i * 0.03) + "s";
+    card.innerHTML = `
+      ${e.locked ? '<span class="lock-tag">📌 고정됨</span>' : ""}
+      <div class="item-photo">
+        <span>${esc(p.emoji || "🍬")}</span>
+        <img src="${esc(productImage(p))}" alt="${esc(p.name)}" onerror="this.remove()">
+        <div class="item-actions">
+          <button class="icon-btn ${e.locked ? "lock-on" : ""}" title="${e.locked ? "고정 해제" : "이 상품 고정"}" data-act="lock" data-id="${esc(id)}">${e.locked ? "🔒" : "🔓"}</button>
+          <button class="icon-btn remove" title="이 상품 제외" data-act="exclude" data-id="${esc(id)}">✕</button>
+        </div>
+      </div>
+      <div class="item-name">${esc(p.name)}</div>
+      <div class="item-cat">${esc(p.cat || "기타")} · 개당 ${fmt(p.price)}</div>
+      <div class="item-bottom">
+        <div class="item-price">${fmt(p.price * e.qty)}</div>
+        <div class="qty-stepper">
+          <button data-act="dec" data-id="${esc(id)}">−</button>
+          <span class="qty">${e.qty}</span>
+          <button data-act="inc" data-id="${esc(id)}">＋</button>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  });
+
+  const totalCount = entries.reduce((s, [, e]) => s + e.qty, 0);
+  $("#result-sub").textContent = `${entries.length}종 · 총 ${totalCount}개 구성 — 빼고 싶은 상품은 ✕, 꼭 넣을 상품은 자물쇠로 고정하세요`;
+}
+
+function renderExcluded() {
+  const box = $("#excluded-box");
+  const wrap = $("#excluded-chips");
+  wrap.innerHTML = "";
+  if (!state.excluded.size) { box.style.display = "none"; return; }
+  box.style.display = "block";
+  for (const id of state.excluded) {
+    const p = byId[id];
+    const chip = document.createElement("button");
+    chip.className = "excluded-chip";
+    chip.dataset.act = "restore";
+    chip.dataset.id = id;
+    chip.innerHTML = `<img src="${esc(productImage(p))}" alt="" onerror="this.remove()"> ${esc(p.name)} <span class="plus">＋</span>`;
+    wrap.appendChild(chip);
+  }
+}
+
+function renderSummary() {
+  const { sub, discount, total, over } = pricing();
+  const b = state.budget;
+
+  $("#sum-subtotal").textContent = fmt(sub);
+  $("#sum-total").textContent = fmt(total);
+  $("#gauge-budget").textContent = "예산 " + fmt(b);
+  $("#box-meta").textContent = `예산 ${fmt(b)} 기준`;
+
+  const rowDiscount = $("#row-discount");
+  if (discount > 0) {
+    rowDiscount.style.display = "flex";
+    $("#sum-discount").textContent = "-" + fmt(discount);
+    $("#discount-rate").textContent = (discount / sub * 100).toFixed(1) + "%";
+  } else {
+    rowDiscount.style.display = "none";
+  }
+
+  const fill = $("#gauge-fill");
+  const ratio = b ? Math.min(total / b, 1) : 0;
+  fill.style.width = (ratio * 100) + "%";
+  fill.classList.toggle("over", over);
+  fill.classList.toggle("perfect", !over && total === b && b > 0);
+
+  const msg = $("#status-msg");
+  const orderBtn = $("#btn-order");
+  if (over) {
+    const maxDiscount = Math.floor(sub * MAX_DISCOUNT_RATE);
+    const needRemove = sub - maxDiscount - b;
+    msg.className = "status-msg over";
+    msg.innerHTML = `⚠️ 예산을 <b>${fmt(sub - b)}</b> 초과했어요. 최대 할인(5%)으로도 부족해서 약 <b>${fmt(needRemove)}</b>어치를 빼야 해요.`;
+    orderBtn.disabled = true;
+  } else if (discount > 0) {
+    msg.className = "status-msg ok";
+    msg.innerHTML = `🎉 초과분 <b>${fmt(discount)}</b>을 자동 할인해서 예산 <b>${fmt(b)}</b>에 딱 맞췄어요!`;
+    orderBtn.disabled = false;
+  } else if (total === b) {
+    msg.className = "status-msg ok";
+    msg.innerHTML = `🎯 예산에 정확히 맞는 구성이에요!`;
+    orderBtn.disabled = false;
+  } else {
+    msg.className = "status-msg warn";
+    msg.innerHTML = `예산까지 <b>${fmt(b - total)}</b> 남았어요. 상품을 더 담거나 이대로 주문해도 좋아요.`;
+    orderBtn.disabled = total === 0;
+  }
+}
+
+/* ================= 이벤트 ================= */
+function parseBudget() {
+  const raw = $("#budget-input").value.replace(/[^0-9]/g, "");
+  return raw ? parseInt(raw, 10) : 0;
+}
+
+$("#budget-input").addEventListener("input", e => {
+  const raw = e.target.value.replace(/[^0-9]/g, "");
+  e.target.value = raw ? parseInt(raw, 10).toLocaleString("ko-KR") : "";
+  document.querySelectorAll(".preset-chip").forEach(c =>
+    c.classList.toggle("active", c.dataset.v === raw));
+});
+$("#budget-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") $("#btn-build").click();
+});
+
+$("#presets").addEventListener("click", e => {
+  const chip = e.target.closest(".preset-chip");
+  if (!chip) return;
+  $("#budget-input").value = parseInt(chip.dataset.v, 10).toLocaleString("ko-KR");
+  document.querySelectorAll(".preset-chip").forEach(c => c.classList.toggle("active", c === chip));
+});
+
+$("#btn-build").addEventListener("click", () => {
+  const b = parseBudget();
+  if (b < MIN_BUDGET) { toast(`예산은 최소 ${fmt(MIN_BUDGET)}부터 가능해요 🙏`); return; }
+  state.budget = b;
+  state.box = new Map();       // 새 예산이면 구성·고정 초기화
+  state.excluded = new Set();
+  composeBox();
+  render();
+  $("#result-section").classList.add("show");
+  $("#result-section").scrollIntoView({ behavior: "smooth", block: "start" });
+  const { discount, total } = pricing();
+  if (discount > 0 || total === state.budget) confetti();
+});
+
+$("#btn-shuffle").addEventListener("click", () => {
+  composeBox();
+  render();
+  toast("새로운 조합으로 다시 담았어요 🔄");
+});
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  const { act, id } = btn.dataset;
+  const entry = state.box.get(id);
+
+  if (act === "inc" && entry) {
+    entry.qty += 1;
+  } else if (act === "dec" && entry) {
+    entry.qty -= 1;
+    if (entry.qty <= 0) state.box.delete(id);
+  } else if (act === "lock" && entry) {
+    entry.locked = !entry.locked;
+    toast(entry.locked ? `📌 ${byId[id].name} 고정! 다시 섞어도 유지돼요` : `${byId[id].name} 고정을 해제했어요`);
+  } else if (act === "exclude") {
+    state.box.delete(id);
+    state.excluded.add(id);
+    toast(`🚫 ${byId[id].name}을(를) 뺐어요 — 다시 섞으면 다른 상품으로 채워져요`);
+  } else if (act === "restore") {
+    state.excluded.delete(id);
+    toast(`${byId[id].name}을(를) 다시 후보에 넣었어요`);
+  } else {
+    return;
+  }
+  render();
+});
+
+/* ================= 이메일 주문서 ================= */
+$("#btn-order").addEventListener("click", () => {
+  $("#order-total-amt").textContent = fmt(pricing().total);
+  $("#order-note").innerHTML = SETTINGS.web3formsKey
+    ? "결제 대신 작성하신 <b>주문서가 바로 이메일로 발송</b>돼요. 버튼 한 번이면 주문 완료!"
+    : "결제 대신 작성하신 <b>주문서가 이메일로 발송</b>돼요. 아래 정보를 입력하고 버튼을 누르면 메일 앱이 열립니다.";
+  $("#order-overlay").classList.add("show");
+  setTimeout(() => $("#order-name").focus(), 80);
+});
+$("#order-cancel").addEventListener("click", () => $("#order-overlay").classList.remove("show"));
+$("#order-overlay").addEventListener("click", e => {
+  if (e.target.id === "order-overlay") e.target.classList.remove("show");
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") $("#order-overlay").classList.remove("show");
+});
+
+function buildOrderText(name, phone, addr, memo) {
+  const { sub, discount, total } = pricing();
+  const lines = [];
+  lines.push("━━━ SnackFit 주문서 ━━━");
+  lines.push(`주문일시: ${new Date().toLocaleString("ko-KR")}`);
+  lines.push(`주문자: ${name}`);
+  if (phone) lines.push(`연락처: ${phone}`);
+  if (addr) lines.push(`배송 주소: ${addr}`);
+  if (memo) lines.push(`요청사항: ${memo}`);
+  lines.push("");
+  lines.push("■ 구성 상품");
+  for (const [id, e] of state.box) {
+    if (e.qty <= 0) continue;
+    const p = byId[id];
+    lines.push(`- ${p.name} x ${e.qty} = ${fmt(p.price * e.qty)}`);
+  }
+  lines.push("");
+  lines.push(`상품 합계: ${fmt(sub)}`);
+  if (discount > 0) lines.push(`예산 맞춤 할인: -${fmt(discount)}`);
+  lines.push(`최종 금액: ${fmt(total)} (예산 ${fmt(state.budget)})`);
+  return lines.join("\n");
+}
+
+function openMailto(to, subject, body) {
+  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+$("#order-send").addEventListener("click", async () => {
+  const name = $("#order-name").value.trim();
+  if (!name) { toast("주문자 이름을 입력해주세요 🙏"); $("#order-name").focus(); return; }
+  const phone = $("#order-phone").value.trim();
+  const addr = $("#order-addr").value.trim();
+  const memo = $("#order-memo").value.trim();
+
+  const to = SETTINGS.orderEmail || "";
+  const subject = `[SnackFit 주문] ${name} - ${fmt(pricing().total)}`;
+  const body = buildOrderText(name, phone, addr, memo);
+
+  /* Web3Forms 키가 설정돼 있으면 실제 자동 발송 */
+  if (SETTINGS.web3formsKey) {
+    const btn = $("#order-send");
+    btn.disabled = true;
+    btn.textContent = "발송 중…";
+    try {
+      const res = await fetch("https://api.web3forms.com/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          access_key: SETTINGS.web3formsKey,
+          subject: subject,
+          from_name: "SnackFit 주문",
+          name: name,
+          message: body,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "발송 실패");
+      $("#order-overlay").classList.remove("show");
+      toast("✅ 주문서가 이메일로 발송됐어요! 확인 후 연락드릴게요 📧");
+      confetti();
+    } catch (err) {
+      toast("⚠️ 자동 발송에 실패해서 메일 앱으로 대신 열어드려요");
+      openMailto(to, subject, body);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "이메일로 주문서 보내기";
+    }
+    return;
+  }
+
+  /* 키가 없으면 메일 앱(mailto) 방식 */
+  openMailto(to, subject, body);
+  $("#order-overlay").classList.remove("show");
+  toast(to
+    ? "📧 메일 앱이 열렸어요 — 보내기 버튼만 누르면 주문 완료!"
+    : "⚠️ 수신 이메일이 비어 있어요 — 관리자 페이지에서 설정해주세요");
+  confetti();
+});
+
+/* ================= 이펙트 ================= */
+let toastTimer;
+function toast(text) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function confetti() {
+  const emojis = ["🍫", "🍭", "🍪", "🍿", "🧁", "🍬", "🎉"];
+  for (let i = 0; i < 24; i++) {
+    const s = document.createElement("span");
+    s.className = "confetti";
+    s.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    s.style.left = Math.random() * 100 + "vw";
+    s.style.animationDuration = 2 + Math.random() * 2 + "s";
+    s.style.animationDelay = Math.random() * 0.4 + "s";
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 5000);
+  }
+}
+</script>
+</body>
+</html>

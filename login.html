@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SnackFit — 로그인</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@latest/dist/web/static/pretendard.min.css" />
+<style>
+  :root {
+    --bg: #f7f7fb;
+    --surface: #ffffff;
+    --ink: #17181d;
+    --ink-2: #5b5f6b;
+    --ink-3: #9a9eab;
+    --line: #ececf2;
+    --brand: #6c5ce7;
+    --accent: #ff7043;
+    --red: #e74c3c;
+    --shadow: 0 10px 30px rgba(23, 24, 29, 0.07);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Pretendard, -apple-system, "Malgun Gothic", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px; position: relative; overflow: hidden;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; }
+  input { font-family: inherit; }
+
+  /* 배경 장식 */
+  .blob {
+    position: fixed; border-radius: 50%; filter: blur(90px); opacity: 0.35; z-index: 0;
+    pointer-events: none;
+  }
+  .blob.b1 { width: 420px; height: 420px; background: #a29bfe; top: -120px; left: -100px; }
+  .blob.b2 { width: 380px; height: 380px; background: #ffb199; bottom: -120px; right: -80px; }
+
+  .login-card {
+    position: relative; z-index: 1;
+    width: 400px; max-width: 100%;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 26px; box-shadow: var(--shadow); padding: 40px 36px;
+    animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+  .logo { font-size: 26px; font-weight: 800; letter-spacing: -0.6px; text-align: center; }
+  .logo .dot { color: var(--brand); }
+  .welcome { text-align: center; font-size: 14px; color: var(--ink-2); margin-top: 10px; line-height: 1.6; }
+
+  .field { margin-top: 18px; }
+  .field label { display: block; font-size: 13px; font-weight: 700; color: var(--ink-2); margin-bottom: 7px; }
+  .field input {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 13px; padding: 14px 16px;
+    font-size: 15px; background: var(--bg); outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--brand); background: #fff; }
+
+  .btn-login {
+    width: 100%; margin-top: 24px; padding: 15px;
+    font-size: 16px; font-weight: 800; color: #fff; border-radius: 14px;
+    background: linear-gradient(120deg, var(--brand), #8e7cf3);
+    box-shadow: 0 8px 20px rgba(108, 92, 231, 0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-login:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(108, 92, 231, 0.45); }
+  .btn-login:active { transform: translateY(0); }
+
+  .error-msg {
+    margin-top: 16px; font-size: 13px; font-weight: 600; color: var(--red);
+    background: rgba(231, 76, 60, 0.08); padding: 12px 14px; border-radius: 12px;
+    line-height: 1.6; display: none;
+  }
+  .error-msg.show { display: block; animation: shake 0.35s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  .signup-note {
+    margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--line);
+    font-size: 12.5px; color: var(--ink-3); text-align: center; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div class="blob b1"></div>
+<div class="blob b2"></div>
+
+<div class="login-card">
+  <div class="logo">🍿 Snack<span class="dot">Fit</span></div>
+  <p class="welcome">예산 맞춤 스낵박스 쇼핑몰<br />로그인 후 이용할 수 있어요</p>
+
+  <div class="field">
+    <label>아이디</label>
+    <input id="login-id" placeholder="아이디를 입력하세요" autocomplete="username" />
+  </div>
+  <div class="field">
+    <label>비밀번호</label>
+    <input id="login-pw" type="password" placeholder="비밀번호를 입력하세요" autocomplete="current-password" />
+  </div>
+
+  <button class="btn-login" id="btn-login">로그인</button>
+  <div class="error-msg" id="error-msg"></div>
+
+  <p class="signup-note">계정이 없으신가요?<br />SnackFit 계정은 <b>관리자가 등록</b>해드려요. 관리자에게 문의해주세요 🙌</p>
+</div>
+
+<script>
+const KEY_USERS = "snackfit_users_v1";
+const KEY_SESSION = "snackfit_session_v1";
+const ADMIN = { id: "poiu", pw: "1234" };
+
+const $ = s => document.querySelector(s);
+
+function loadUsers() {
+  try { return JSON.parse(localStorage.getItem(KEY_USERS)) || []; } catch (e) { return []; }
+}
+function getSession() {
+  try { return JSON.parse(localStorage.getItem(KEY_SESSION)); } catch (e) { return null; }
+}
+
+/* 이미 로그인돼 있으면 바로 이동 */
+const existing = getSession();
+if (existing && existing.id) {
+  location.replace(existing.role === "admin" ? "admin.html" : "snackbox.html");
+}
+
+function showError(msg) {
+  const el = $("#error-msg");
+  el.innerHTML = msg;
+  el.classList.remove("show");
+  void el.offsetWidth; // 애니메이션 재시작
+  el.classList.add("show");
+}
+
+function login() {
+  const id = $("#login-id").value.trim();
+  const pw = $("#login-pw").value;
+  if (!id || !pw) { showError("아이디와 비밀번호를 모두 입력해주세요."); return; }
+
+  // 관리자 로그인
+  if (id === ADMIN.id) {
+    if (pw === ADMIN.pw) {
+      localStorage.setItem(KEY_SESSION, JSON.stringify({ id, name: "관리자", role: "admin", ts: Date.now() }));
+      location.href = "admin.html";
+    } else {
+      showError("비밀번호가 올바르지 않아요.");
+    }
+    return;
+  }
+
+  // 사용자 로그인 (관리자가 등록한 계정만)
+  const user = loadUsers().find(u => u.id === id);
+  if (!user) {
+    showError("등록되지 않은 아이디예요.<br />계정은 관리자가 등록해줘야 이용할 수 있어요.");
+    return;
+  }
+  if (user.pw !== pw) {
+    showError("비밀번호가 올바르지 않아요.");
+    return;
+  }
+  localStorage.setItem(KEY_SESSION, JSON.stringify({ id: user.id, name: user.name || user.id, role: "user", ts: Date.now() }));
+  location.href = "snackbox.html";
+}
+
+$("#btn-login").addEventListener("click", login);
+document.addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+</script>
+</body>
+</html>

@@ -119,6 +119,25 @@ const $ = s => document.querySelector(s);
 function loadUsers() {
   try { return JSON.parse(localStorage.getItem(KEY_USERS)) || []; } catch (e) { return []; }
 }
+
+/* ================= 클라우드 동기화 (GitHub 저장소) =================
+   관리자가 등록한 계정을 어떤 컴퓨터에서든 읽을 수 있게 한다. */
+const CLOUD_DATA_URL = "https://raw.githubusercontent.com/mkrr87-cmd/snackfit-data/main/data.json";
+const CLOUD_API_READ = "https://api.github.com/repos/mkrr87-cmd/snackfit-data/contents/data.json";
+
+async function cloudLoad() {
+  /* 1순위: GitHub API (항상 최신, 시간당 60회 제한) → 초과 시 raw CDN (최대 5분 캐시) */
+  try {
+    const res = await fetch(CLOUD_API_READ, { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" });
+    if (res.ok) {
+      const j = await res.json();
+      return JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g, "")))));
+    }
+  } catch (e) { /* 폴백으로 진행 */ }
+  const res2 = await fetch(CLOUD_DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+  if (!res2.ok) throw new Error("cloud " + res2.status);
+  return res2.json();
+}
 function getSession() {
   try { return JSON.parse(localStorage.getItem(KEY_SESSION)); } catch (e) { return null; }
 }
@@ -137,7 +156,7 @@ function showError(msg) {
   el.classList.add("show");
 }
 
-function login() {
+async function login() {
   const id = $("#login-id").value.trim();
   const pw = $("#login-pw").value;
   if (!id || !pw) { showError("아이디와 비밀번호를 모두 입력해주세요."); return; }
@@ -153,8 +172,22 @@ function login() {
     return;
   }
 
-  // 사용자 로그인 (관리자가 등록한 계정만)
-  const user = loadUsers().find(u => u.id === id);
+  // 사용자 로그인: 클라우드에서 최신 계정 목록을 가져와 확인 (실패 시 이 브라우저의 캐시 사용)
+  const btn = $("#btn-login");
+  btn.disabled = true;
+  btn.textContent = "확인 중…";
+  let userList = loadUsers();
+  try {
+    const d = await cloudLoad();
+    if (Array.isArray(d.users)) {
+      userList = d.users;
+      localStorage.setItem(KEY_USERS, JSON.stringify(d.users));
+    }
+  } catch (e) { /* 오프라인 — 로컬 캐시로 검사 */ }
+  btn.disabled = false;
+  btn.textContent = "로그인";
+
+  const user = userList.find(u => u.id === id);
   if (!user) {
     showError("등록되지 않은 아이디예요.<br />계정은 관리자가 등록해줘야 이용할 수 있어요.");
     return;

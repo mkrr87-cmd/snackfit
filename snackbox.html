@@ -521,9 +521,44 @@ function loadSettings() {
     return Object.assign({}, DEFAULT_SETTINGS, s || {});
   } catch (e) { return { ...DEFAULT_SETTINGS }; }
 }
-const PRODUCTS = loadProducts();
-const SETTINGS = loadSettings();
-const byId = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+let PRODUCTS = loadProducts();
+let SETTINGS = loadSettings();
+let byId = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+
+/* ================= 클라우드 동기화 (GitHub 저장소) =================
+   상품·계정·설정을 모든 방문자가 공유하도록 GitHub의 data.json에서 불러온다. */
+const CLOUD_DATA_URL = "https://raw.githubusercontent.com/mkrr87-cmd/snackfit-data/main/data.json";
+const CLOUD_API_READ = "https://api.github.com/repos/mkrr87-cmd/snackfit-data/contents/data.json";
+
+async function cloudLoad() {
+  /* 1순위: GitHub API (항상 최신, 시간당 60회 제한) → 초과 시 raw CDN (최대 5분 캐시) */
+  try {
+    const res = await fetch(CLOUD_API_READ, { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" });
+    if (res.ok) {
+      const j = await res.json();
+      return JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g, "")))));
+    }
+  } catch (e) { /* 폴백으로 진행 */ }
+  const res2 = await fetch(CLOUD_DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+  if (!res2.ok) throw new Error("cloud " + res2.status);
+  return res2.json();
+}
+
+/* 페이지 로드 시 클라우드 데이터로 갱신 (실패하면 로컬/기본값 유지) */
+(async () => {
+  try {
+    const d = await cloudLoad();
+    if (Array.isArray(d.products) && d.products.length) {
+      PRODUCTS = d.products.filter(p => p && p.id && p.name && p.price > 0);
+      byId = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+      localStorage.setItem(KEY_PRODUCTS, JSON.stringify(PRODUCTS));
+    }
+    if (d.settings) {
+      SETTINGS = Object.assign({}, DEFAULT_SETTINGS, d.settings);
+      localStorage.setItem(KEY_SETTINGS, JSON.stringify(d.settings));
+    }
+  } catch (e) { /* 오프라인이거나 클라우드 미설정 — 로컬 데이터로 동작 */ }
+})();
 
 /* ================= 로그인 세션 ================= */
 const SESSION = (() => {

@@ -452,6 +452,7 @@
     <h2>📧 주문서 보내기</h2>
     <p class="order-note" id="order-note">결제 대신 작성하신 <b>주문서가 이메일로 발송</b>돼요.</p>
     <div class="field"><label>주문자 이름 *</label><input id="order-name" placeholder="홍길동" autocomplete="name" /></div>
+    <div class="field"><label>이메일 * <span style="font-weight:500;color:var(--ink-3)">— 주문서 사본을 이 주소로 보내드려요</span></label><input id="order-email-input" type="email" placeholder="you@example.com" autocomplete="email" /></div>
     <div class="field"><label>연락처</label><input id="order-phone" placeholder="010-0000-0000" autocomplete="tel" /></div>
     <div class="field"><label>배송 주소</label><input id="order-addr" placeholder="서울시 ○○구 ○○로 123" autocomplete="street-address" /></div>
     <div class="field"><label>요청사항</label><textarea id="order-memo" placeholder="예) 사무실 간식용이에요. 문 앞에 놓아주세요."></textarea></div>
@@ -892,12 +893,13 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape") $("#order-overlay").classList.remove("show");
 });
 
-function buildOrderText(name, phone, addr, memo) {
+function buildOrderText(name, email, phone, addr, memo) {
   const { sub, discount, total } = pricing();
   const lines = [];
   lines.push("━━━ SnackFit 주문서 ━━━");
   lines.push(`주문일시: ${new Date().toLocaleString("ko-KR")}`);
   lines.push(`주문자: ${name}`);
+  if (email) lines.push(`이메일: ${email}`);
   if (phone) lines.push(`연락처: ${phone}`);
   if (addr) lines.push(`배송 주소: ${addr}`);
   if (memo) lines.push(`요청사항: ${memo}`);
@@ -915,20 +917,31 @@ function buildOrderText(name, phone, addr, memo) {
   return lines.join("\n");
 }
 
-function openMailto(to, subject, body) {
-  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+function buildMailtoUrl(to, cc, subject, body) {
+  let url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if (cc) url += `&cc=${encodeURIComponent(cc)}`; // 주문자에게 사본 발송
+  return url;
+}
+function openMailto(to, cc, subject, body) {
+  window.location.href = buildMailtoUrl(to, cc, subject, body);
 }
 
 $("#order-send").addEventListener("click", async () => {
   const name = $("#order-name").value.trim();
   if (!name) { toast("주문자 이름을 입력해주세요 🙏"); $("#order-name").focus(); return; }
+  const email = $("#order-email-input").value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    toast("이메일 주소를 올바르게 입력해주세요 🙏");
+    $("#order-email-input").focus();
+    return;
+  }
   const phone = $("#order-phone").value.trim();
   const addr = $("#order-addr").value.trim();
   const memo = $("#order-memo").value.trim();
 
   const to = SETTINGS.orderEmail || "";
   const subject = `[SnackFit 주문] ${name} - ${fmt(pricing().total)}`;
-  const body = buildOrderText(name, phone, addr, memo);
+  const body = buildOrderText(name, email, phone, addr, memo);
 
   /* Web3Forms 키가 설정돼 있으면 실제 자동 발송 */
   if (SETTINGS.web3formsKey) {
@@ -944,17 +957,20 @@ $("#order-send").addEventListener("click", async () => {
           subject: subject,
           from_name: "SnackFit 주문",
           name: name,
+          email: email,      // 회신 주소 = 주문자
+          replyto: email,
+          ccemail: email,    // 주문자에게 사본
           message: body,
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.message || "발송 실패");
       $("#order-overlay").classList.remove("show");
-      toast("✅ 주문서가 이메일로 발송됐어요! 확인 후 연락드릴게요 📧");
+      toast(`✅ 주문서가 발송됐어요! ${email}로도 사본이 갑니다 📧`);
       confetti();
     } catch (err) {
       toast("⚠️ 자동 발송에 실패해서 메일 앱으로 대신 열어드려요");
-      openMailto(to, subject, body);
+      openMailto(to, email, subject, body);
     } finally {
       btn.disabled = false;
       btn.textContent = "이메일로 주문서 보내기";
@@ -962,11 +978,11 @@ $("#order-send").addEventListener("click", async () => {
     return;
   }
 
-  /* 키가 없으면 메일 앱(mailto) 방식 */
-  openMailto(to, subject, body);
+  /* 키가 없으면 메일 앱(mailto) 방식 — 주문자 이메일을 참조(CC)로 넣어 사본 발송 */
+  openMailto(to, email, subject, body);
   $("#order-overlay").classList.remove("show");
   toast(to
-    ? "📧 메일 앱이 열렸어요 — 보내기 버튼만 누르면 주문 완료!"
+    ? "📧 메일 앱이 열렸어요 — 보내기만 누르면 사장님과 내 메일로 주문서가 가요!"
     : "⚠️ 수신 이메일이 비어 있어요 — 관리자 페이지에서 설정해주세요");
   confetti();
 });

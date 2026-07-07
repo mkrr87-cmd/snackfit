@@ -319,6 +319,36 @@
   }
   .btn-send:hover { filter: brightness(1.05); }
 
+  /* ---------- order history ---------- */
+  .order-item {
+    border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+    margin-top: 12px; background: var(--bg);
+  }
+  .order-item .order-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .order-item .order-date { font-size: 13px; font-weight: 700; }
+  .status-badge {
+    font-size: 11.5px; font-weight: 800; padding: 4px 10px; border-radius: 99px; white-space: nowrap;
+  }
+  .status-badge.s-접수 { background: rgba(243, 156, 18, 0.12); color: #d68910; }
+  .status-badge.s-수락 { background: rgba(0, 184, 148, 0.12); color: var(--green); }
+  .status-badge.s-취소 { background: rgba(154, 158, 171, 0.15); color: var(--ink-3); }
+  .order-item .order-items-text { font-size: 13px; color: var(--ink-2); margin-top: 8px; line-height: 1.6; }
+  .order-item .order-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+  .order-item .order-total { font-size: 15px; font-weight: 800; }
+  .btn-cancel-order {
+    font-size: 12.5px; font-weight: 700; color: var(--red);
+    background: rgba(231, 76, 60, 0.08); padding: 8px 14px; border-radius: 10px;
+    transition: background 0.15s;
+  }
+  .btn-cancel-order:hover { background: rgba(231, 76, 60, 0.16); }
+  .orders-empty { text-align: center; color: var(--ink-3); font-size: 14px; padding: 30px 0; }
+  .orders-loading { text-align: center; color: var(--ink-3); font-size: 14px; padding: 30px 0; }
+
+  /* ---------- 잠긴 수량 스테퍼 ---------- */
+  .qty-stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .qty-stepper button:disabled:hover { background: transparent; }
+  .qty-stepper.locked { outline: 1.5px solid var(--brand); outline-offset: -1.5px; }
+
   /* ---------- toast ---------- */
   #toast {
     position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -357,6 +387,7 @@
     <div class="logo">🍿 Snack<span class="dot">Fit</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="header-badge user-chip" id="user-chip"></span>
+      <button class="header-badge admin-link" id="btn-my-orders" style="cursor:pointer">📋 주문 내역</button>
       <a class="header-badge admin-link" href="admin.html" id="admin-link">⚙️ 관리자</a>
       <button class="header-badge admin-link" id="btn-logout" style="cursor:pointer">로그아웃</button>
     </div>
@@ -460,6 +491,18 @@
     <div class="modal-actions">
       <button class="btn-ghost" id="order-cancel">취소</button>
       <button class="btn-send" id="order-send">이메일로 주문서 보내기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 주문 내역 모달 -->
+<div class="overlay" id="orders-overlay">
+  <div class="modal">
+    <h2>📋 내 주문 내역</h2>
+    <div id="orders-list"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="orders-refresh">🔄 새로고침</button>
+      <button class="btn-ghost" id="orders-close">닫기</button>
     </div>
   </div>
 </div>
@@ -654,7 +697,8 @@ function composeBox() {
     if (e.locked) { next.set(id, { ...e }); total += byId[id].price * e.qty; }
   }
 
-  const pool = PRODUCTS.filter(p => !state.excluded.has(p.id));
+  // 제외 상품과 고정(자물쇠) 상품은 채우기 후보에서 뺀다 — 고정 상품은 수량까지 그대로 유지
+  const pool = PRODUCTS.filter(p => !state.excluded.has(p.id) && !next.has(p.id));
   if (!pool.length) { state.box = next; return; }
 
   // 1단계: 예산에 도달할 때까지 무작위로 다양하게 담기
@@ -698,6 +742,120 @@ function composeBox() {
   state.box = next;
 }
 
+/* ================= 주문 저장소 (공유) =================
+   주문 접수·수락·취소 상태를 모든 기기에서 공유한다. */
+const ORDERS_URL = "https://api.restful-api.dev/objects/ff8081819d82fab6019f3a5611712665";
+
+async function ordersLoad() {
+  const res = await fetch(ORDERS_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error("orders " + res.status);
+  const j = await res.json();
+  return (j.data && Array.isArray(j.data.orders)) ? j.data.orders : [];
+}
+async function ordersSave(orders) {
+  const res = await fetch(ORDERS_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "snackfit-orders", data: { orders: orders.slice(-200) } }),
+  });
+  if (!res.ok) throw new Error("orders save " + res.status);
+}
+
+/* 주문 접수 기록 */
+async function recordOrder(name, email, phone, addr, memo) {
+  const { sub, discount, total } = pricing();
+  const items = [];
+  for (const [id, e] of state.box) {
+    if (e.qty > 0) items.push({ name: byId[id].name, qty: e.qty, price: byId[id].price });
+  }
+  const order = {
+    id: "o_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    userId: SESSION ? SESSION.id : "guest",
+    name, email, phone, addr, memo,
+    items, sub, discount, total, budget: state.budget,
+    status: "접수",
+    createdAt: Date.now(),
+  };
+  const orders = await ordersLoad();
+  orders.push(order);
+  await ordersSave(orders);
+  return order;
+}
+
+/* ================= 내 주문 내역 UI ================= */
+const fmtDateTime = ts => new Date(ts).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function orderItemsSummary(items) {
+  if (!items.length) return "-";
+  const first = `${items[0].name} x${items[0].qty}`;
+  const count = items.reduce((s, i) => s + i.qty, 0);
+  return items.length > 1 ? `${first} 외 ${items.length - 1}종 · 총 ${count}개` : `${first} · 총 ${count}개`;
+}
+
+async function renderMyOrders() {
+  const list = $("#orders-list");
+  list.innerHTML = '<div class="orders-loading">불러오는 중…</div>';
+  let orders;
+  try {
+    orders = await ordersLoad();
+  } catch (e) {
+    list.innerHTML = '<div class="orders-empty">⚠️ 주문 내역을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</div>';
+    return;
+  }
+  const mine = orders.filter(o => o.userId === (SESSION ? SESSION.id : "")).reverse();
+  if (!mine.length) {
+    list.innerHTML = '<div class="orders-empty">아직 주문 내역이 없어요 🍿</div>';
+    return;
+  }
+  list.innerHTML = mine.map(o => `
+    <div class="order-item">
+      <div class="order-head">
+        <span class="order-date">${fmtDateTime(o.createdAt)}</span>
+        <span class="status-badge s-${esc(o.status)}">${o.status === "접수" ? "⏳ 접수됨" : o.status === "수락" ? "✅ 수락됨" : "✕ 취소됨"}</span>
+      </div>
+      <div class="order-items-text">${esc(orderItemsSummary(o.items))}</div>
+      <div class="order-foot">
+        <span class="order-total">${fmt(o.total)}</span>
+        ${o.status === "접수" ? `<button class="btn-cancel-order" data-cancel-order="${esc(o.id)}">취소하기</button>` : ""}
+        ${o.status === "수락" ? `<span style="font-size:12px;color:var(--ink-3)">수락된 주문은 취소할 수 없어요</span>` : ""}
+      </div>
+    </div>`).join("");
+}
+
+$("#btn-my-orders").addEventListener("click", () => {
+  $("#orders-overlay").classList.add("show");
+  renderMyOrders();
+});
+$("#orders-close").addEventListener("click", () => $("#orders-overlay").classList.remove("show"));
+$("#orders-refresh").addEventListener("click", renderMyOrders);
+$("#orders-overlay").addEventListener("click", e => {
+  if (e.target.id === "orders-overlay") e.target.classList.remove("show");
+});
+
+/* 주문 취소: 관리자가 이미 수락했으면 불가 */
+document.addEventListener("click", async e => {
+  const btn = e.target.closest("[data-cancel-order]");
+  if (!btn) return;
+  if (!confirm("이 주문을 취소할까요?")) return;
+  btn.disabled = true;
+  btn.textContent = "취소 중…";
+  try {
+    const orders = await ordersLoad(); // 최신 상태 재확인
+    const o = orders.find(x => x.id === btn.dataset.cancelOrder);
+    if (!o) { toast("주문을 찾을 수 없어요"); renderMyOrders(); return; }
+    if (o.status === "수락") { toast("⚠️ 관리자가 이미 수락한 주문이라 취소할 수 없어요"); renderMyOrders(); return; }
+    if (o.status === "취소") { renderMyOrders(); return; }
+    o.status = "취소";
+    o.canceledAt = Date.now();
+    await ordersSave(orders);
+    toast("주문을 취소했어요");
+    renderMyOrders();
+  } catch (err) {
+    toast("⚠️ 취소 처리에 실패했어요 — 잠시 후 다시 시도해주세요");
+    renderMyOrders();
+  }
+});
+
 /* ================= 렌더링 ================= */
 function render() {
   renderItems();
@@ -729,10 +887,10 @@ function renderItems() {
       <div class="item-cat">${esc(p.cat || "기타")} · 개당 ${fmt(p.price)}</div>
       <div class="item-bottom">
         <div class="item-price">${fmt(p.price * e.qty)}</div>
-        <div class="qty-stepper">
-          <button data-act="dec" data-id="${esc(id)}">−</button>
-          <span class="qty">${e.qty}</span>
-          <button data-act="inc" data-id="${esc(id)}">＋</button>
+        <div class="qty-stepper ${e.locked ? "locked" : ""}" title="${e.locked ? "고정된 상품은 수량도 잠겨요 — 자물쇠를 풀면 조절할 수 있어요" : ""}">
+          <button data-act="dec" data-id="${esc(id)}" ${e.locked ? "disabled" : ""}>−</button>
+          <span class="qty">${e.locked ? "🔒 " : ""}${e.qty}</span>
+          <button data-act="inc" data-id="${esc(id)}" ${e.locked ? "disabled" : ""}>＋</button>
         </div>
       </div>`;
     grid.appendChild(card);
@@ -862,7 +1020,7 @@ document.addEventListener("click", e => {
     if (entry.qty <= 0) state.box.delete(id);
   } else if (act === "lock" && entry) {
     entry.locked = !entry.locked;
-    toast(entry.locked ? `📌 ${byId[id].name} 고정! 다시 섞어도 유지돼요` : `${byId[id].name} 고정을 해제했어요`);
+    toast(entry.locked ? `📌 ${byId[id].name} 고정! 다시 섞어도 상품·수량 그대로 유지돼요` : `${byId[id].name} 고정을 해제했어요 — 수량 조절 가능`);
   } else if (act === "exclude") {
     state.box.delete(id);
     state.excluded.add(id);
@@ -957,19 +1115,20 @@ $("#order-send").addEventListener("click", async () => {
           subject: subject,
           from_name: "SnackFit 주문",
           name: name,
-          email: email,      // 회신 주소 = 주문자
+          email: email,      // 회신 주소 = 주문자 (사장님이 '답장'만 누르면 연락 가능)
           replyto: email,
-          ccemail: email,    // 주문자에게 사본
           message: body,
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.message || "발송 실패");
+      try { await recordOrder(name, email, phone, addr, memo); } catch (e) { /* 이메일은 이미 발송됨 */ }
       $("#order-overlay").classList.remove("show");
-      toast(`✅ 주문서가 발송됐어요! ${email}로도 사본이 갑니다 📧`);
+      toast("✅ 주문이 접수되고 사장님께 발송됐어요! — 📋 주문 내역에서 확인·취소할 수 있어요");
       confetti();
     } catch (err) {
-      toast("⚠️ 자동 발송에 실패해서 메일 앱으로 대신 열어드려요");
+      try { await recordOrder(name, email, phone, addr, memo); } catch (e2) { /* 기록 실패해도 메일은 진행 */ }
+      toast("⚠️ 자동 발송에 실패해서 메일 앱으로 대신 열어드려요 — 주문은 접수됐어요");
       openMailto(to, email, subject, body);
     } finally {
       btn.disabled = false;
@@ -979,10 +1138,16 @@ $("#order-send").addEventListener("click", async () => {
   }
 
   /* 키가 없으면 메일 앱(mailto) 방식 — 주문자 이메일을 참조(CC)로 넣어 사본 발송 */
+  const btn = $("#order-send");
+  btn.disabled = true;
+  btn.textContent = "접수 중…";
+  try { await recordOrder(name, email, phone, addr, memo); } catch (e) { /* 주문 기록 실패해도 이메일은 진행 */ }
+  btn.disabled = false;
+  btn.textContent = "이메일로 주문서 보내기";
   openMailto(to, email, subject, body);
   $("#order-overlay").classList.remove("show");
   toast(to
-    ? "📧 메일 앱이 열렸어요 — 보내기만 누르면 사장님과 내 메일로 주문서가 가요!"
+    ? "📧 주문이 접수됐어요! 메일 보내기까지 누르면 완료 — 📋 주문 내역에서 확인하세요"
     : "⚠️ 수신 이메일이 비어 있어요 — 관리자 페이지에서 설정해주세요");
   confetti();
 });

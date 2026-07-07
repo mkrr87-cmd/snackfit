@@ -195,6 +195,14 @@
   .x-mode input { accent-color: var(--brand); margin-top: 2px; }
   .x-mode label:has(input:checked) { border-color: var(--brand); color: var(--brand); background: rgba(108, 92, 231, 0.06); }
 
+  /* 주문 상태 배지 */
+  .status-badge { font-size: 11.5px; font-weight: 800; padding: 4px 10px; border-radius: 99px; white-space: nowrap; }
+  .status-badge.s-접수 { background: rgba(243, 156, 18, 0.12); color: #d68910; }
+  .status-badge.s-수락 { background: rgba(0, 184, 148, 0.12); color: var(--green); }
+  .status-badge.s-취소 { background: rgba(154, 158, 171, 0.15); color: var(--ink-3); }
+  .o-name { font-weight: 700; }
+  .o-sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
   /* 토스트 */
   #toast {
     position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -224,6 +232,33 @@
 </header>
 
 <main>
+  <!-- 주문 관리 -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>🧾 주문 관리 <span id="o-count" style="color:var(--ink-3);font-size:14px;font-weight:600"></span></h2>
+        <p class="desc">고객 주문을 확인하고 수락하세요. <b>수락한 주문은 고객이 취소할 수 없어요.</b></p>
+      </div>
+      <button class="btn ghost sm" id="btn-orders-refresh">🔄 새로고침</button>
+    </div>
+    <div style="overflow-x:auto;margin-top:12px">
+      <table>
+        <thead>
+          <tr>
+            <th>일시</th>
+            <th>주문자</th>
+            <th class="hide-sm">구성</th>
+            <th>금액</th>
+            <th>상태</th>
+            <th style="width:100px;text-align:right">관리</th>
+          </tr>
+        </thead>
+        <tbody id="o-tbody"></tbody>
+      </table>
+      <div class="empty-note" id="o-empty" style="display:none">아직 들어온 주문이 없어요</div>
+    </div>
+  </div>
+
   <!-- 주문 수신 이메일 -->
   <div class="card">
     <div class="card-head">
@@ -979,6 +1014,93 @@ $("#import-file").addEventListener("change", e => {
   };
   r.readAsText(f);
 });
+
+/* ---------- 주문 관리 (공유 주문 저장소) ---------- */
+const ORDERS_URL = "https://api.restful-api.dev/objects/ff8081819d82fab6019f3a5611712665";
+
+async function ordersLoad() {
+  const res = await fetch(ORDERS_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error("orders " + res.status);
+  const j = await res.json();
+  return (j.data && Array.isArray(j.data.orders)) ? j.data.orders : [];
+}
+async function ordersSave(orders) {
+  const res = await fetch(ORDERS_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "snackfit-orders", data: { orders: orders.slice(-200) } }),
+  });
+  if (!res.ok) throw new Error("orders save " + res.status);
+}
+
+const fmtDateTime = ts => new Date(ts).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function orderItemsSummary(items) {
+  if (!items || !items.length) return "-";
+  const count = items.reduce((s, i) => s + i.qty, 0);
+  const first = `${items[0].name} x${items[0].qty}`;
+  return items.length > 1 ? `${first} 외 ${items.length - 1}종 · ${count}개` : `${first} · ${count}개`;
+}
+function orderItemsFull(o) {
+  const lines = (o.items || []).map(i => `${i.name} x${i.qty} = ${fmt(i.price * i.qty)}`);
+  const contact = [o.email, o.phone, o.addr, o.memo].filter(Boolean).join(" / ");
+  return lines.join("\n") + (o.discount ? `\n할인: -${fmt(o.discount)}` : "") + `\n최종: ${fmt(o.total)}` + (contact ? `\n${contact}` : "");
+}
+
+async function renderOrders() {
+  const tbody = $("#o-tbody");
+  let orders;
+  try {
+    orders = await ordersLoad();
+  } catch (e) {
+    tbody.innerHTML = "";
+    $("#o-empty").style.display = "block";
+    $("#o-empty").textContent = "⚠️ 주문을 불러오지 못했어요 — 새로고침을 눌러주세요";
+    return;
+  }
+  const list = [...orders].reverse();
+  const pending = list.filter(o => o.status === "접수").length;
+  $("#o-count").textContent = `· 전체 ${list.length}건${pending ? ` (대기 ${pending}건)` : ""}`;
+  $("#o-empty").style.display = list.length ? "none" : "block";
+  tbody.innerHTML = list.map(o => `
+    <tr title="${esc(orderItemsFull(o))}">
+      <td style="white-space:nowrap">${fmtDateTime(o.createdAt)}</td>
+      <td><div class="o-name">${esc(o.name)}</div><div class="o-sub">${esc(o.email || "")}</div></td>
+      <td class="hide-sm" style="font-size:13px;color:var(--ink-2)">${esc(orderItemsSummary(o.items))}</td>
+      <td class="p-price">${fmt(o.total)}</td>
+      <td><span class="status-badge s-${esc(o.status)}">${o.status === "접수" ? "⏳ 접수" : o.status === "수락" ? "✅ 수락" : "✕ 취소"}</span></td>
+      <td>
+        <div class="row-actions">
+          ${o.status === "접수" ? `<button class="btn primary sm" data-accept-order="${esc(o.id)}">수락</button>` : ""}
+        </div>
+      </td>
+    </tr>`).join("");
+}
+
+$("#btn-orders-refresh").addEventListener("click", renderOrders);
+
+document.addEventListener("click", async e => {
+  const btn = e.target.closest("[data-accept-order]");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = "처리 중…";
+  try {
+    const orders = await ordersLoad(); // 최신 상태에서 처리 (고객이 방금 취소했을 수 있음)
+    const o = orders.find(x => x.id === btn.dataset.acceptOrder);
+    if (!o) { toast("주문을 찾을 수 없어요"); renderOrders(); return; }
+    if (o.status === "취소") { toast("고객이 이미 취소한 주문이에요"); renderOrders(); return; }
+    o.status = "수락";
+    o.acceptedAt = Date.now();
+    await ordersSave(orders);
+    toast(`✅ ${o.name}님의 주문을 수락했어요 — 이제 고객이 취소할 수 없어요`);
+    renderOrders();
+  } catch (err) {
+    toast("⚠️ 처리에 실패했어요 — 다시 시도해주세요");
+    renderOrders();
+  }
+});
+
+renderOrders();
 
 /* ---------- 토스트 ---------- */
 let toastTimer;

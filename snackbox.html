@@ -686,6 +686,8 @@ function pricing() {
 /* ================= 자동 구성 알고리즘 =================
    목표: 합계가 [예산, 예산/0.95] 구간에 들어가도록 담아서
    할인으로 정확히 예산에 맞추기. 불가능하면 예산 이하로 최대한 근접. */
+let lastComposition = new Set(); // 직전 구성 상품 id — 다음 구성에서 겹침을 줄이기 위해 기억
+
 function composeBox() {
   const b = state.budget;
   const ceiling = Math.floor(b / (1 - MAX_DISCOUNT_RATE)); // 할인으로 커버 가능한 합계 상한
@@ -698,26 +700,57 @@ function composeBox() {
   }
 
   // 제외 상품과 고정(자물쇠) 상품은 채우기 후보에서 뺀다 — 고정 상품은 수량까지 그대로 유지
-  const pool = PRODUCTS.filter(p => !state.excluded.has(p.id) && !next.has(p.id));
-  if (!pool.length) { state.box = next; return; }
+  const fullPool = PRODUCTS.filter(p => !state.excluded.has(p.id) && !next.has(p.id));
+  if (!fullPool.length) { state.box = next; return; }
+
+  // 매번 새로운 구성이 나오도록: 직전 구성에 쓰인 상품은 1/3만 재등장 허용
+  // (새 후보가 넉넉할 때만 — 상품 수가 적으면 전체 후보 사용)
+  let pool = fullPool;
+  const fresh = fullPool.filter(p => !lastComposition.has(p.id));
+  if (fresh.length >= 6) {
+    const carryOver = shuffle(fullPool.filter(p => lastComposition.has(p.id)))
+      .slice(0, Math.ceil(lastComposition.size / 3));
+    pool = shuffle(fresh.concat(carryOver));
+  }
+
+  // 품목당 최대 수량도 매번 달라지게 (2~3개) — 수량 구성에도 변화
+  const qtyCap = 2 + Math.floor(Math.random() * 2);
+
+  // 고가 상품 하나가 박스를 독차지하지 않도록: 초반에는 예산의 25% 이하 상품만 담는다
+  const priceCap = Math.max(b * 0.25, 3000);
 
   // 1단계: 예산에 도달할 때까지 무작위로 다양하게 담기
   let guard = 1000;
   while (total < b && guard-- > 0) {
-    const affordable = pool.filter(p => {
+    const isEarly = total < b * 0.6; // 예산 60% 채우기 전까지는 "다양하게 담기" 구간
+    let affordable = pool.filter(p => {
       const cur = next.get(p.id) ? next.get(p.id).qty : 0;
-      return cur < MAX_QTY_PER_ITEM && total + p.price <= ceiling;
+      return cur < qtyCap && total + p.price <= ceiling && (!isEarly || p.price <= priceCap);
     });
-    if (!affordable.length) break;
+    if (!affordable.length) {
+      // 고가 제한 때문에 후보가 없으면 제한을 풀고 재시도
+      affordable = pool.filter(p => {
+        const cur = next.get(p.id) ? next.get(p.id).qty : 0;
+        return cur < qtyCap && total + p.price <= ceiling;
+      });
+      if (!affordable.length) break;
+    }
 
-    // 담았을 때 [예산, 상한]에 안착하는 상품이 있으면 초과분이 가장 작은 것 우선
+    // 담았을 때 [예산, 상한]에 안착하는 상품 = 마무리 후보
     const landing = affordable.filter(p => total + p.price >= b);
+    const under = affordable.filter(p => total + p.price < b);
     let pick;
-    if (landing.length) {
+    if (!isEarly && landing.length) {
+      // 충분히 담은 뒤에만 마무리 — 초과분이 작은 상위 3개 중 무작위 (매번 같은 마무리 방지)
       landing.sort((x, y) => x.price - y.price);
-      pick = landing[0];
+      pick = landing[Math.floor(Math.random() * Math.min(3, landing.length))];
+    } else if (under.length) {
+      pick = shuffle(under)[0];
+    } else if (landing.length) {
+      landing.sort((x, y) => x.price - y.price);
+      pick = landing[Math.floor(Math.random() * Math.min(3, landing.length))];
     } else {
-      pick = shuffle(affordable)[0];
+      break;
     }
     const e = next.get(pick.id) || { qty: 0, locked: false };
     e.qty += 1;
@@ -725,21 +758,27 @@ function composeBox() {
     total += pick.price;
   }
 
-  // 2단계: 예산 미달이면 저렴한 상품으로 예산 이하까지 최대한 채우기
+  // 2단계: 예산 미달이면 남는 금액에 맞는 상품을 무작위로 채우기
+  // (다양성 후보로 못 채우면 전체 후보로 확대)
   if (total < b) {
-    const cheap = [...pool].sort((x, y) => x.price - y.price);
     guard = 500;
+    let candidates = pool;
     while (guard-- > 0) {
-      const fit = cheap.find(p => total + p.price <= b);
-      if (!fit) break;
-      const e = next.get(fit.id) || { qty: 0, locked: false };
+      const fits = candidates.filter(p => total + p.price <= b);
+      if (!fits.length) {
+        if (candidates !== fullPool) { candidates = fullPool; continue; }
+        break;
+      }
+      const pick = fits[Math.floor(Math.random() * fits.length)];
+      const e = next.get(pick.id) || { qty: 0, locked: false };
       e.qty += 1;
-      next.set(fit.id, e);
-      total += fit.price;
+      next.set(pick.id, e);
+      total += pick.price;
     }
   }
 
   state.box = next;
+  lastComposition = new Set([...next.keys()]); // 이번 구성을 기억 → 다음엔 다른 조합 우선
 }
 
 /* ================= 주문 저장소 (공유) =================
